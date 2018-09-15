@@ -1,0 +1,536 @@
+<html>
+<head>
+  <style>
+  canvas {
+    width: 500;
+    height: 500;
+    //display: block;
+    border: none;
+  }
+  input.slider {
+    width: 340px;
+    height: 20px;
+  }
+  label.slider {
+    vertical-align:top;
+    display:inline-block;
+    height: 20px;
+  }
+  </style>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=windows-1252">
+  <title>Lorenz Attractor
+  </title>
+
+  <script id="shader-fs" type="x-shader/x-fragment">
+  precision mediump float;
+  uniform vec4 colorIn;
+
+  //varying float zColor;
+  varying vec3 vVertex;
+
+  varying vec4 vColor;
+
+  void main(void) {
+    //gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+    //gl_FragColor = colorIn;
+
+    // vec2 coord = gl_PointCoord - vec2(0.5);  //from [0,1] to [-0.5,0.5]
+    // if(length(coord) > 0.5)                  //outside of circle radius?
+    // {
+    //   discard;
+    // }
+
+    //gl_FragColor = vec4(0.0, max(0.0,min(1.0,1.0-zColor)), max(0.0,min(1.0,zColor)), 1.0);
+    //gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+    //gl_FragColor = vec4(clamp((vVertex.x+16.0)/8.0, 0.0, 1.0), clamp((vVertex.y+16.0)/16.0, 0.0, 1.0), clamp(vVertex.z/32.0, 0.0, 1.0), 1.0);
+
+    //gl_FragColor = vec4(gl_PointCoord.x, gl_PointCoord.y, 0.0, 1.0);
+    gl_FragColor = vColor;
+  }
+  </script>
+
+  <script id="shader-vs" type="x-shader/x-vertex">
+  attribute vec3 aVertexPosition;
+  attribute vec4 aVertexColor;
+
+  uniform mat4 modelMatrix;
+  uniform mat4 cameraMatrix;
+  uniform mat4 projectionMatrix;
+
+  varying vec3 vVertex;
+  varying vec4 vColor;
+
+  void main(void) {
+    gl_Position = projectionMatrix*cameraMatrix*modelMatrix*vec4(aVertexPosition, 1.0);
+    vVertex = aVertexPosition;
+    vColor = aVertexColor;
+  }
+  </script>
+
+<script type="text/javascript">
+
+var gl;
+function initGL(canvas) {
+  try {
+    gl = canvas.getContext("webgl");
+    gl.viewportWidth = canvas.width;
+    gl.viewportHeight = canvas.height;
+  } catch (e) {
+    alert("Error initializing WebGL: "+e);
+  }
+  if (!gl) {
+    alert("Error initializing WebGL");
+  }
+}
+
+function getShader(gl, id) {
+  var shaderScript = document.getElementById(id);
+  if (!shaderScript) {
+    return null;
+  }
+
+  var str = "";
+  var k = shaderScript.firstChild;
+  while (k) {
+    if (k.nodeType == 3) {
+      str += k.textContent;
+    }
+    k = k.nextSibling;
+  }
+
+  var shader;
+  if (shaderScript.type == "x-shader/x-fragment") {
+    shader = gl.createShader(gl.FRAGMENT_SHADER);
+  } else if (shaderScript.type == "x-shader/x-vertex") {
+    shader = gl.createShader(gl.VERTEX_SHADER);
+  } else {
+    return null;
+  }
+
+  gl.shaderSource(shader, str);
+  gl.compileShader(shader);
+
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    alert(gl.getShaderInfoLog(shader));
+    return null;
+  }
+
+  return shader;
+}
+
+var shaderProgram;
+
+function initShaders() {
+  var fragmentShader = getShader(gl, "shader-fs");
+  var vertexShader = getShader(gl, "shader-vs");
+
+  shaderProgram = gl.createProgram();
+  gl.attachShader(shaderProgram, vertexShader);
+  gl.attachShader(shaderProgram, fragmentShader);
+  gl.linkProgram(shaderProgram);
+
+  if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+    alert("Could not initialise shaders");
+  }
+
+  gl.useProgram(shaderProgram);
+
+  shaderProgram.aVertexPosition = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+  gl.enableVertexAttribArray(shaderProgram.aVertexPosition);
+  shaderProgram.aVertexColor = gl.getAttribLocation(shaderProgram, "aVertexColor");
+  gl.enableVertexAttribArray(shaderProgram.aVertexColor);
+
+  shaderProgram.colorIn = gl.getUniformLocation(shaderProgram, "colorIn");
+
+  shaderProgram.projectionMatrixUniform = gl.getUniformLocation(shaderProgram, "projectionMatrix");
+  shaderProgram.cameraMatrixUniform = gl.getUniformLocation(shaderProgram, "cameraMatrix");
+  shaderProgram.modelMatrixUniform = gl.getUniformLocation(shaderProgram, "modelMatrix");
+}
+
+var modelBank = 0.0;
+var modelPitch = 0.0;
+var modelHeading = 0.0;
+var modelTranslateX = 0.0;
+var modelTranslateY = 0.0;
+var modelTranslateZ = -54.17/2.0;
+
+var modelMatrix = new Float32Array(16);
+function buildModelMatrix() {
+  // Euler angle rotation matrix
+    // (ch*cb + sh*sp*sb)    (sb*cp)    (-sh*cb + ch*sp*sb)
+    // (-ch*sb + sh*sp*cb)   (cb*cp)    (sb*sh + ch*sp*cb)
+    // (sh cp)                (-sp)         (ch*cp)
+
+    modelMatrix[(0*4)] = (Math.cos(modelHeading)*Math.cos(modelBank)) + (Math.sin(modelHeading)*Math.sin(modelPitch)*Math.sin(modelBank));
+    modelMatrix[(1*4)] = Math.sin(modelBank)*Math.cos(modelPitch);
+    modelMatrix[(2*4)] = (-Math.sin(modelHeading)*Math.cos(modelBank)) + (Math.cos(modelHeading)*Math.sin(modelPitch)*Math.sin(modelBank));
+    modelMatrix[(3*4)] = modelTranslateX;
+
+    modelMatrix[(0*4)+1] = (-Math.cos(modelHeading)*Math.sin(modelBank)) + (Math.sin(modelHeading)*Math.sin(modelPitch)*Math.cos(modelBank));
+    modelMatrix[(1*4)+1] = (Math.cos(modelBank)*Math.cos(modelPitch));
+    modelMatrix[(2*4)+1] = (Math.sin(modelBank)*Math.sin(modelHeading)) + (Math.cos(modelHeading)*Math.sin(modelPitch)*Math.cos(modelBank));
+    modelMatrix[(3*4)+1] = modelTranslateY;
+
+    modelMatrix[(0*4)+2] = Math.sin(modelHeading)*Math.cos(modelPitch);
+    modelMatrix[(1*4)+2] = (-Math.sin(modelPitch));
+    modelMatrix[(2*4)+2] = (Math.cos(modelHeading)*Math.cos(modelPitch));
+    modelMatrix[(3*4)+2] = modelTranslateZ;
+
+    modelMatrix[(0*4)+3] = 0.0;
+    modelMatrix[(1*4)+3] = 0.0;
+    modelMatrix[(2*4)+3] = 0.0;
+    modelMatrix[(3*4)+3] = 1.0;
+}
+
+var cameraMatrix = new Float32Array(16);
+function buildCameraMatrix() {
+
+  // Euler angle rotation matrix
+    // (ch*cb + sh*sp*sb)    (sb*cp)    (-sh*cb + ch*sp*sb)
+    // (-ch*sb + sh*sp*cb)   (cb*cp)    (sb*sh + ch*sp*cb)
+    // (sh cp)                (-sp)         (ch*cp)
+
+    cameraMatrix[(0*4)] = (Math.cos(heading)*Math.cos(bank)) + (Math.sin(heading)*Math.sin(pitch)*Math.sin(bank));
+    cameraMatrix[(1*4)] = Math.sin(bank)*Math.cos(pitch);
+    cameraMatrix[(2*4)] = (-Math.sin(heading)*Math.cos(bank)) + (Math.cos(heading)*Math.sin(pitch)*Math.sin(bank));
+    cameraMatrix[(3*4)] = cameraTranslateX;
+
+    cameraMatrix[(0*4)+1] = (-Math.cos(heading)*Math.sin(bank)) + (Math.sin(heading)*Math.sin(pitch)*Math.cos(bank));
+    cameraMatrix[(1*4)+1] = (Math.cos(bank)*Math.cos(pitch));
+    cameraMatrix[(2*4)+1] = (Math.sin(bank)*Math.sin(heading)) + (Math.cos(heading)*Math.sin(pitch)*Math.cos(bank));
+    cameraMatrix[(3*4)+1] = cameraTranslateY;
+
+    cameraMatrix[(0*4)+2] = Math.sin(heading)*Math.cos(pitch);
+    cameraMatrix[(1*4)+2] = (-Math.sin(pitch));
+    cameraMatrix[(2*4)+2] = (Math.cos(heading)*Math.cos(pitch));
+    cameraMatrix[(3*4)+2] = cameraTranslateZ;
+
+    cameraMatrix[(0*4)+3] = 0.0;
+    cameraMatrix[(1*4)+3] = 0.0;
+    cameraMatrix[(2*4)+3] = 0.0;
+    cameraMatrix[(3*4)+3] = 1.0;
+}
+
+var projectionMatrix = new Float32Array(16);
+
+function buildProjectionMatrix(r, l, t, b, f, n) {
+
+// this one works with column vectors
+
+  projectionMatrix[(0*4)] = 2.0*n/(r-l);
+  projectionMatrix[(1*4)] = 0.0;
+  projectionMatrix[(2*4)] = 0.0;
+  projectionMatrix[(3*4)] = -n*(r+l)/(r-l);
+
+  projectionMatrix[(0*4)+1] = 0.0;
+  projectionMatrix[(1*4)+1] = 2.0*n/(t-b);
+  projectionMatrix[(2*4)+1] = 0.0;
+  projectionMatrix[(3*4)+1] = -n*(t+b)/(t-b);
+
+  projectionMatrix[(0*4)+2] = 0.0;
+  projectionMatrix[(1*4)+2] = 0.0;
+  projectionMatrix[(2*4)+2] = (f+n)/(f-n);
+  projectionMatrix[(3*4)+2] = -2.0*f*n/(f-n);
+
+  projectionMatrix[(0*4)+3] = 0.0;
+  projectionMatrix[(1*4)+3] = 0.0;
+  projectionMatrix[(2*4)+3] = 1.0;
+  projectionMatrix[(3*4)+3] = 0.0;
+}
+
+var modelVertexPositionBuffer;
+var modelVertexColorBuffer;
+
+var minX = Number.MAX_VALUE;
+var maxX = Number.MIN_VALUE;
+var minY = Number.MAX_VALUE;
+var maxY = Number.MIN_VALUE;
+var minZ = Number.MAX_VALUE;
+var maxZ = Number.MIN_VALUE;
+
+var fineThreshold = 0.0;
+var roughThreshold = 13.0;
+function buildModelVertexes() {
+
+  var vertexArray = new Array();
+  var colorArray = new Array();
+
+  var x = 0.01;
+  var y = 0.0;
+  var z = 0.0;
+
+  var a = 10.0;
+  var b = 28.0;
+  var c = 8.0/3.0;
+
+  var dt = 0.01;
+  var dx, dy, dz;
+
+  var red = 1.0;
+  var green = 0.0;
+  var blue = 0.0;
+
+  var colorKeyFramesArray = [
+    [1.0, 0.0, 0.0], // red
+    [1.0, 0.0, 0.0], // red
+    [1.0, 0.5, 0.0], // orange
+    [1.0, 1.0, 0.0], // yellow
+    [0.0, 1.0, 0.0], // green
+    [0.0, 0.0, 1.0], // blue
+    [0.25, 0.0, 1.0], // indigo
+    [0.5, 0.0, 1.0], // violet
+  ];
+
+  var numItems = 0;
+  var iThresh = Math.pow(2, parseFloat(roughThreshold)) + parseFloat(fineThreshold);
+  //console.log("iThresh: "+iThresh+" rough: "+roughThreshold+" fine: "+fineThreshold);
+  var colorKeyFramesArrayLength = colorKeyFramesArray.length;
+  var keyFrameStep = iThresh / (colorKeyFramesArrayLength-1);
+
+  for (var i=0; i<iThresh; i++) {
+    dx = (a * (y - x))*dt;
+    dy = (x * (b - z) - y)*dt;
+    dz = ((x * y) - (c * z))*dt;
+
+    x += dx;
+    y += dy;
+    z += dz;
+
+    if (x < minX) {
+      minX = x;
+    }
+    if (x > maxX) {
+      maxX = x;
+    }
+
+    if (y < minY) {
+      minY = y;
+    }
+    if (y > maxY) {
+      maxY = y;
+    }
+
+    if (z < minZ) {
+      minZ = z;
+    }
+    if (z > maxZ) {
+      maxZ = z;
+    }
+
+    vertexArray.push(x);
+    vertexArray.push(y);
+    vertexArray.push(z);
+
+    var keyFrameIndex0 = Math.floor(i / keyFrameStep);
+    var keyFrameIndex1 = (keyFrameIndex0 + 1.0) % colorKeyFramesArrayLength;
+    var keyFrameOffset = i % keyFrameStep;
+    var color0 = colorKeyFramesArray[keyFrameIndex0];
+    var color1 = colorKeyFramesArray[keyFrameIndex1];
+    var colorT = keyFrameOffset/keyFrameStep;
+
+    var red = colorT*(color1[0] - color0[0]) + color0[0];
+    var green = colorT*(color1[1] - color0[1]) + color0[1];
+    var blue = colorT*(color1[2] - color0[2]) + color0[2];
+
+    colorArray.push(red, green, blue, 1.0);
+
+    numItems += 1;
+  }
+
+  modelVertexPositionBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexPositionBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexArray), gl.STATIC_DRAW);
+
+  modelVertexColorBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexColorBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colorArray), gl.STATIC_DRAW);
+
+  modelVertexPositionBuffer.itemSize = 3;
+  modelVertexPositionBuffer.numItems = numItems;
+
+  modelVertexColorBuffer.itemSize = 4;
+  modelVertexColorBuffer.numItems = numItems;
+
+  // console.log("x in ["+minX+","+maxX+"]");
+  // console.log("y in ["+minY+","+maxY+"]");
+  // console.log("z in ["+minZ+","+maxZ+"]");
+}
+
+function drawScene() {
+  gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+
+  // heading += 0.3*Math.PI/180.0;
+  // pitch += 0.1*Math.PI/180.0;
+  // bank += 0.05*Math.PI/180.0;
+  buildCameraMatrix();
+
+  // modelHeading += 0.5*Math.PI/180.0;
+  // modelPitch += 1.0*Math.PI/180.0;
+  // modelBank += 1.5*Math.PI/180.0;
+  buildModelMatrix();
+
+  //printMatrix(cameraMatrix, "Camera Matrix");
+  gl.uniformMatrix4fv(shaderProgram.projectionMatrixUniform, false, projectionMatrix);
+  gl.uniformMatrix4fv(shaderProgram.cameraMatrixUniform, false, cameraMatrix);
+
+  //mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, projectionMatrix);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexPositionBuffer);
+  gl.vertexAttribPointer(shaderProgram.aVertexPosition, modelVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexColorBuffer);
+  gl.vertexAttribPointer(shaderProgram.aVertexColor, modelVertexColorBuffer.itemSize, gl.FLOAT, false, 0, 0);
+  gl.uniform4f(shaderProgram.colorIn, 1.0, 0.0, 0.0, 1.0);
+  gl.uniformMatrix4fv(shaderProgram.modelMatrixUniform, false, modelMatrix);
+
+  gl.drawArrays(gl.LINE_STRIP, 0, modelVertexPositionBuffer.numItems);
+  //requestAnimationFrame(drawScene);
+}
+
+var currentlyPressedKeys = {};
+var incAmt = 1.0;
+
+var bank = 0.0;
+var pitch = 0.0;
+var heading = 0.0;
+var cameraTranslateX = 0.0;
+var cameraTranslateY = 0.0;
+var cameraTranslateZ = 75.0;
+var rotateDeltaDegrees = 10.0;
+
+function printMatrix(matrix, desc) {
+
+  var matrixStr = "[\n";
+  for(var r=0; r<4; r++) {
+    matrixStr += "[";
+    for(var c=0; c<4; c++) {
+      matrixStr += ""+matrix[r+(c*4)].toFixed(3);
+      if (c<4-1) {
+        matrixStr += ", "
+      }
+    }
+    matrixStr += "]";
+    if (r<4-1) {
+      matrixStr += ",";
+    } else {
+      matrixStr += "\n]";
+    }
+    matrixStr += "\n"
+  }
+  console.log(desc+": "+matrixStr);
+}
+
+function webGLStart() {
+  var canvas = document.getElementById("webGL-canvas");
+  initGL(canvas);
+  initShaders();
+
+  var fovy = 45*Math.PI/180.0;
+  var aspectRatio = 1.0;
+  var f = cameraTranslateZ*2.0;
+  var n = 0.1;
+
+  var t = Math.tan(fovy/2.0)*n;
+  var b = -t;
+  var r = aspectRatio*t;
+  var l = -r;
+  buildProjectionMatrix(r, l, t, b, f, n);
+
+  buildCameraMatrix();
+
+  buildModelMatrix();
+
+  buildModelVertexes();
+
+  gl.clearColor(0.0, 0.0, 0.0, 1.0);
+  gl.enable(gl.DEPTH_TEST);
+
+  gl.uniformMatrix4fv(shaderProgram.projectionMatrixUniform, false, projectionMatrix);
+  gl.uniformMatrix4fv(shaderProgram.cameraMatrixUniform, false, cameraMatrix);
+  gl.uniformMatrix4fv(shaderProgram.modelMatrixUniform, false, modelMatrix);
+  //requestAnimationFrame(drawScene);
+  drawScene();
+
+  // show initial values for sliders
+  roughThresholdSlider.oninput();
+  fineThresholdSlider.oninput();
+  headingSlider.oninput();
+  pitchSlider.oninput();
+  bankSlider.oninput();
+}
+
+</script>
+
+
+</head>
+
+
+<body onload="webGLStart();">
+
+  <canvas id="webGL-canvas" width="500" height="500">
+  </canvas>
+
+  <div class="slidecontainer">
+    <input type="range" min="0.0" max="20.0" value="13.0" step="1.0" class="slider" id="roughThresholdSlider">
+    <label class="slider">Rough threshold (power of 2): <span id="roughThresholdLabel"></span></label>
+    <br>
+    <input type="range" min="0.0" max="500.0" value="0.0" step="1.0" class="slider" id="fineThresholdSlider">
+    <label class="slider">Fine threshold: <span id="fineThresholdLabel"></span></label>
+    <br>
+    <input type="range" min="-180.0" max="180.0" value="0.0" step="1.0" class="slider" id="headingSlider">
+    <label class="slider">heading: <span id="headingLabel"></span>&#176;</label>
+    <br>
+    <input type="range" min="-90.0" max="90.0" value="0.0" step="1.0" class="slider" id="pitchSlider">
+    <label class="slider">pitch: <span id="pitchLabel"></span>&#176;</label>
+    <br>
+    <input type="range" min="-180.0" max="180.0" value="0.0" step="1.0" class="slider" id="bankSlider">
+    <label class="slider">bank: <span id="bankLabel"></span>&#176;</label>
+  </div>
+
+  <script>
+  var roughThresholdSlider = document.getElementById("roughThresholdSlider");
+  roughThresholdSlider.oninput = function() {
+    roughThreshold = this.value;
+    var output = document.getElementById("roughThresholdLabel");
+    output.innerHTML = roughThresholdSlider.value;
+    buildModelVertexes();
+    drawScene();
+  }
+
+  var fineThresholdSlider = document.getElementById("fineThresholdSlider");
+  fineThresholdSlider.oninput = function() {
+    fineThreshold = this.value;
+    var output = document.getElementById("fineThresholdLabel");
+    output.innerHTML = fineThresholdSlider.value;
+    buildModelVertexes();
+    drawScene();
+  }
+
+  var headingSlider = document.getElementById("headingSlider");
+  headingSlider.oninput = function() {
+    heading = this.value*Math.PI/180.0;
+    var output = document.getElementById("headingLabel");
+    output.innerHTML = headingSlider.value;
+    drawScene();
+  }
+
+  var pitchSlider = document.getElementById("pitchSlider");
+  pitchSlider.oninput = function() {
+    pitch = this.value*Math.PI/180.0;
+    var output = document.getElementById("pitchLabel");
+    output.innerHTML = pitchSlider.value;
+    drawScene();
+  }
+
+  var bankSlider = document.getElementById("bankSlider");
+  bankSlider.oninput = function() {
+    bank = this.value*Math.PI/180.0;
+    var output = document.getElementById("bankLabel");
+    output.innerHTML = bankSlider.value;
+    drawScene();
+  }
+  </script>
+</body>
+</html>

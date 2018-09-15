@@ -1,0 +1,175 @@
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=windows-1252">
+  <title>Colored Snow
+  </title>
+
+  <script id="shader-fs" type="x-shader/x-fragment">
+  precision mediump float;
+
+  uniform float uTime;
+
+  float PHI = 1.61803398874989484820459 * 0.1; // Golden Ratio
+  float PI  = 3.14159265358979323846264 * 0.1; // PI
+  float SQ2 = 1.41421356237309504880169 * 10000.0; // Square Root of Two
+
+  float gold_noise(in vec2 coordinate, in float seed){
+      return fract(tan(distance(coordinate*(seed+PHI), vec2(PHI, PI)))*SQ2);
+  }
+
+  float rand(vec2 co){
+    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+  }
+
+  void main(void) {
+
+    //gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+    //gl_FragColor = vec4(1.0, gold_noise(gl_PointCoord, uTime+0.1), gold_noise(gl_PointCoord, uTime+0.1), 1.0);
+    gl_FragColor = vec4(gold_noise(gl_PointCoord, uTime*56769123.23), gold_noise(gl_PointCoord, uTime*2348702.3), gold_noise(gl_PointCoord, uTime*98712.128), 1.0);
+  }
+  </script>
+
+  <script id="shader-vs" type="x-shader/x-vertex">
+  attribute vec3 aVertexPosition;
+
+  void main(void) {
+    gl_Position = vec4(aVertexPosition, 1.0);
+    gl_PointSize = 10.0;
+  }
+  </script>
+
+<script type="text/javascript">
+
+var gl;
+function initGL(canvas) {
+  try {
+    gl = canvas.getContext("webgl");
+    gl.viewportWidth = canvas.width;
+    gl.viewportHeight = canvas.height;
+  } catch (e) {
+    alert("Error initializing WebGL: "+e);
+  }
+  if (!gl) {
+    alert("Error initializing WebGL");
+  }
+}
+
+function getShader(gl, id) {
+  var shaderScript = document.getElementById(id);
+  if (!shaderScript) {
+    return null;
+  }
+
+  var str = "";
+  var k = shaderScript.firstChild;
+  while (k) {
+    if (k.nodeType == 3) {
+      str += k.textContent;
+    }
+    k = k.nextSibling;
+  }
+
+  var shader;
+  if (shaderScript.type == "x-shader/x-fragment") {
+    shader = gl.createShader(gl.FRAGMENT_SHADER);
+  } else if (shaderScript.type == "x-shader/x-vertex") {
+    shader = gl.createShader(gl.VERTEX_SHADER);
+  } else {
+    return null;
+  }
+
+  gl.shaderSource(shader, str);
+  gl.compileShader(shader);
+
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    alert(gl.getShaderInfoLog(shader));
+    return null;
+  }
+
+  return shader;
+}
+
+var shaderProgram;
+
+function initShaders() {
+  var fragmentShader = getShader(gl, "shader-fs");
+  var vertexShader = getShader(gl, "shader-vs");
+
+  shaderProgram = gl.createProgram();
+  gl.attachShader(shaderProgram, vertexShader);
+  gl.attachShader(shaderProgram, fragmentShader);
+  gl.linkProgram(shaderProgram);
+
+  if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+    alert("Could not initialise shaders");
+  }
+
+  gl.useProgram(shaderProgram);
+
+  shaderProgram.aVertexPosition = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+  gl.enableVertexAttribArray(shaderProgram.aVertexPosition);
+
+  shaderProgram.uTime = gl.getUniformLocation(shaderProgram, "uTime");
+}
+
+var modelVertexPositionBuffer;
+function buildModelVertexes() {
+  modelVertexPositionBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexPositionBuffer);
+
+  var vertexArray = new Array();
+  vertexArray.push(-1.0, -1.0, 0.0);
+  vertexArray.push(1.0, -1.0, 0.0);
+  vertexArray.push(-1.0, 1.0, 0.0);
+  vertexArray.push(1.0, -1.0, 0.0);
+  vertexArray.push(1.0, 1.0, 0.0);
+
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexArray), gl.STATIC_DRAW);
+
+  modelVertexPositionBuffer.itemSize = 3;
+  modelVertexPositionBuffer.numItems = vertexArray.length / modelVertexPositionBuffer.itemSize;
+}
+
+var timeCnt = 0.1;
+function drawScene() {
+  gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexPositionBuffer);
+  gl.vertexAttribPointer(shaderProgram.aVertexPosition, modelVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+  gl.uniform1f(shaderProgram.uTime, timeCnt);
+
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, modelVertexPositionBuffer.numItems);
+
+  requestAnimationFrame(drawScene);
+
+  timeCnt += 0.1;
+  //console.log("timeCnt: "+timeCnt);
+}
+
+function webGLStart() {
+  var canvas = document.getElementById("webGL-canvas");
+  initGL(canvas);
+  initShaders();
+
+  buildModelVertexes();
+
+  gl.clearColor(0.0, 0.0, 0.0, 1.0);
+  //gl.enable(gl.DEPTH_TEST);
+
+  requestAnimationFrame(drawScene);
+}
+
+</script>
+
+
+</head>
+
+
+<body onload="webGLStart();">
+
+  <canvas id="webGL-canvas" style="border: none;" width="500" height="500">
+  </canvas>
+
+</body>
+</html>

@@ -1,0 +1,340 @@
+<!-- Demo of WebGL Normalized Device Coordinates (NDC).  Show that WebGL NDC is a left handed coordinate system -->
+<html>
+<head>
+  <style>
+  canvas {
+    width: 400px;
+    height: 400px;
+    display: block;
+  }
+  input.slider {
+    width: 340px;
+    height: 20px;
+  }
+  label.slider {
+    vertical-align:top;
+    display:inline-block;
+    height: 20px;
+  }
+  </style>
+  <meta http-equiv="Content-Type" content="text/html; charset=windows-1252">
+  <title>WebGL NDC Demo
+  </title>
+
+  <script id="shader-fs" type="x-shader/x-fragment">
+  precision mediump float;
+  uniform vec4 uColor;
+
+  void main(void) {
+    gl_FragColor = uColor;
+  }
+</script>
+
+<script id="shader-vs" type="x-shader/x-vertex">
+attribute vec3 aVertexPosition;
+uniform mat4 uModelMatrix;
+uniform mat4 uProjectionMatrix;
+
+void main(void) {
+  gl_Position = uProjectionMatrix * uModelMatrix * vec4(aVertexPosition, 1.0);
+}
+</script>
+
+<script type="text/javascript">
+var gl;
+function initGL(canvas) {
+  try {
+    gl = canvas.getContext("webgl");
+    //gl = canvas.getContext("experimental-webgl");
+    gl.viewportWidth = canvas.width;
+    gl.viewportHeight = canvas.height;
+  } catch (e) {
+
+  }
+  if (!gl) {
+    alert("Init WebGL Error");
+  }
+}
+
+function getShader(gl, id) {
+  var shaderScript = document.getElementById(id);
+  if (!shaderScript) {
+    return null;
+  }
+
+  var str = "";
+  var k = shaderScript.firstChild;
+  while (k) {
+    if (k.nodeType == 3) {
+      str += k.textContent;
+    }
+    k = k.nextSibling;
+  }
+
+  var shader;
+  if (shaderScript.type == "x-shader/x-fragment") {
+    shader = gl.createShader(gl.FRAGMENT_SHADER);
+  } else if (shaderScript.type == "x-shader/x-vertex") {
+    shader = gl.createShader(gl.VERTEX_SHADER);
+  } else {
+    return null;
+  }
+
+  gl.shaderSource(shader, str);
+  gl.compileShader(shader);
+
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    alert(gl.getShaderInfoLog(shader));
+    return null;
+  }
+
+  return shader;
+}
+
+var shaderProgram;
+function initShaders() {
+  var fragmentShader = getShader(gl, "shader-fs");
+  var vertexShader = getShader(gl, "shader-vs");
+
+  shaderProgram = gl.createProgram();
+  gl.attachShader(shaderProgram, vertexShader);
+  gl.attachShader(shaderProgram, fragmentShader);
+  gl.linkProgram(shaderProgram);
+
+  if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+    alert("Init Shaders Error");
+  }
+
+  gl.useProgram(shaderProgram);
+
+  shaderProgram.aVertexPosition = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+  gl.enableVertexAttribArray(shaderProgram.aVertexPosition);
+
+  shaderProgram.uProjectionMatrix = gl.getUniformLocation(shaderProgram, "uProjectionMatrix");
+  shaderProgram.uModelMatrix = gl.getUniformLocation(shaderProgram, "uModelMatrix");
+
+  shaderProgram.uColor = gl.getUniformLocation(shaderProgram, "uColor");
+}
+
+var projectionMatrix = new Float32Array(16);
+function buildProjectionMatrix() {
+
+  projectionMatrix[(0*4)+0] = 1.0;
+  projectionMatrix[(1*4)+0] = 0.0;
+  projectionMatrix[(2*4)+0] = 0.0;
+  projectionMatrix[(3*4)+0] = 0.0;
+
+  projectionMatrix[(0*4)+1] = 0.0;
+  projectionMatrix[(1*4)+1] = 1.0;
+  projectionMatrix[(2*4)+1] = 0.0;
+  projectionMatrix[(3*4)+1] = 0.0;
+
+  projectionMatrix[(0*4)+2] = 0.0;
+  projectionMatrix[(1*4)+2] = 0.0;
+  projectionMatrix[(2*4)+2] = 1.0;
+  projectionMatrix[(3*4)+2] = 0.0;
+
+  projectionMatrix[(0*4)+3] = 0.0;
+  projectionMatrix[(1*4)+3] = 0.0;
+  projectionMatrix[(2*4)+3] = 0.0;
+  projectionMatrix[(3*4)+3] = 1.0;
+
+  gl.uniformMatrix4fv(shaderProgram.uProjectionMatrix, false, projectionMatrix);
+}
+
+var referenceTriangleModelMatrix = new Float32Array(16);
+function buildReferenceTriangleModelMatrix() {
+
+  referenceTriangleModelMatrix[(0*4)+0] = 1.0;
+  referenceTriangleModelMatrix[(1*4)+0] = 0.0;
+  referenceTriangleModelMatrix[(2*4)+0] = 0.0;
+  referenceTriangleModelMatrix[(3*4)+0] = 0.0;
+
+  referenceTriangleModelMatrix[(0*4)+1] = 0.0;
+  referenceTriangleModelMatrix[(1*4)+1] = 1.0;
+  referenceTriangleModelMatrix[(2*4)+1] = 0.0;
+  referenceTriangleModelMatrix[(3*4)+1] = 0.0;
+
+  referenceTriangleModelMatrix[(0*4)+2] = 0.0;
+  referenceTriangleModelMatrix[(1*4)+2] = 0.0;
+  referenceTriangleModelMatrix[(2*4)+2] = 1.0;
+  referenceTriangleModelMatrix[(3*4)+2] = 0.0;
+
+  referenceTriangleModelMatrix[(0*4)+3] = 0.0;
+  referenceTriangleModelMatrix[(1*4)+3] = 0.0;
+  referenceTriangleModelMatrix[(2*4)+3] = 0.0;
+  referenceTriangleModelMatrix[(3*4)+3] = 1.0;
+}
+
+var movingTriangleModelMatrix = new Float32Array(16);
+var movingTriangleModelTranslateX = 0.0;
+var movingTriangleModelTranslateY = 0.0;
+var movingTriangleModelTranslateZ = 0.1;
+function buildMovingTriangleModelMatrix() {
+
+  movingTriangleModelMatrix[(0*4)+0] = 1.0;
+  movingTriangleModelMatrix[(1*4)+0] = 0.0;
+  movingTriangleModelMatrix[(2*4)+0] = 0.0;
+  movingTriangleModelMatrix[(3*4)+0] = movingTriangleModelTranslateX;
+
+  movingTriangleModelMatrix[(0*4)+1] = 0.0;
+  movingTriangleModelMatrix[(1*4)+1] = 1.0;
+  movingTriangleModelMatrix[(2*4)+1] = 0.0;
+  movingTriangleModelMatrix[(3*4)+1] = movingTriangleModelTranslateY;
+
+  movingTriangleModelMatrix[(0*4)+2] = 0.0;
+  movingTriangleModelMatrix[(1*4)+2] = 0.0;
+  movingTriangleModelMatrix[(2*4)+2] = 1.0;
+  movingTriangleModelMatrix[(3*4)+2] = movingTriangleModelTranslateZ;
+
+  movingTriangleModelMatrix[(0*4)+3] = 0.0;
+  movingTriangleModelMatrix[(1*4)+3] = 0.0;
+  movingTriangleModelMatrix[(2*4)+3] = 0.0;
+  movingTriangleModelMatrix[(3*4)+3] = 1.0;
+}
+
+var referenceTriangleBuffer;
+function initReferenceTriangleBuffer() {
+  referenceTriangleBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, referenceTriangleBuffer);
+  var vertices = [
+    -1.0, -1.0, 0.0,
+    1.0, -1.0, 0.0,
+    -0.5, 1.0, 0.0
+  ];
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+  referenceTriangleBuffer.itemSize = 3;
+  referenceTriangleBuffer.numItems = vertices.length / referenceTriangleBuffer.itemSize;
+}
+
+var movingTriangleBuffer;
+function initMovingTriangleBuffer() {
+  movingTriangleBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, movingTriangleBuffer);
+  var vertices = [
+    -1.0, -1.0, 0.0,
+    1.0, 0.0, 0.0,
+    0.0, 1.0, 0.0
+  ];
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+  movingTriangleBuffer.itemSize = 3;
+  movingTriangleBuffer.numItems = vertices.length / movingTriangleBuffer.itemSize;
+}
+
+function initBuffers() {
+  initReferenceTriangleBuffer();
+  initMovingTriangleBuffer();
+}
+
+function drawScene() {
+  gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+  gl.enable(gl.BLEND);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, movingTriangleBuffer);
+  gl.vertexAttribPointer(shaderProgram.aVertexPosition, movingTriangleBuffer.itemSize, gl.FLOAT, false, 0, 0);
+  gl.uniform4f(shaderProgram.uColor, 0.0, 0.0, 1.0, 1.0);
+  buildMovingTriangleModelMatrix();
+  gl.uniformMatrix4fv(shaderProgram.uModelMatrix, false, movingTriangleModelMatrix);
+  gl.drawArrays(gl.TRIANGLES, 0, movingTriangleBuffer.numItems);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, referenceTriangleBuffer);
+  gl.vertexAttribPointer(shaderProgram.aVertexPosition, referenceTriangleBuffer.itemSize, gl.FLOAT, false, 0, 0);
+  gl.uniform4f(shaderProgram.uColor, 1.0, 0.0, 0.0, 0.5);
+  gl.uniformMatrix4fv(shaderProgram.uModelMatrix, false, referenceTriangleModelMatrix);
+  gl.drawArrays(gl.TRIANGLES, 0, referenceTriangleBuffer.numItems);
+}
+
+function webGLStart() {
+  var canvas = document.getElementById("canvas");
+  initGL(canvas);
+  initShaders();
+  initBuffers();
+  buildProjectionMatrix();
+  buildReferenceTriangleModelMatrix();
+  buildMovingTriangleModelMatrix();
+
+  gl.clearColor(0.0, 0.0, 0.0, 1.0);
+  gl.enable(gl.DEPTH_TEST);
+
+  drawScene();
+
+  // show initial values for sliders
+  xSlider.oninput();
+  ySlider.oninput();
+  zSlider.oninput();
+}
+
+function printMatrix(matrix, desc) {
+
+  var matrixStr = "[\n";
+  for(var r=0; r<4; r++) {
+    matrixStr += "[";
+    for(var c=0; c<4; c++) {
+      matrixStr += ""+matrix[r+(c*4)].toFixed(3);
+      if (c<4-1) {
+        matrixStr += ", "
+      }
+    }
+    matrixStr += "]";
+    if (r<4-1) {
+      matrixStr += ",";
+    } else {
+      matrixStr += "\n]";
+    }
+    matrixStr += "\n"
+  }
+  console.log(desc+": "+matrixStr);
+}
+</script>
+</head>
+
+<body onload="webGLStart();">
+
+  <canvas id="canvas" style="border: none;" width="500" height="500">
+  </canvas>
+
+  <div class="slidecontainer">
+    <input type="range" min="-1.1" max="1.1" value="0.1" step="0.1" class="slider" id="movingTriangleXPositionSlider">
+    <label class="slider">x: <span id="xPositionLabel"></span></label>
+    <br>
+    <input type="range" min="-1.1" max="1.1" value="0.1" step="0.1" class="slider" id="movingTriangleYPositionSlider">
+    <label class="slider">y: <span id="yPositionLabel"></span></label>
+    <br>
+    <input type="range" min="-1.1" max="1.1" value="0.1" step="0.1" class="slider" id="movingTriangleZPositionSlider">
+    <label class="slider">z: <span id="zPositionLabel"></span></label>
+  </div>
+
+  <script>
+  var xSlider = document.getElementById("movingTriangleXPositionSlider");
+  xSlider.oninput = function() {
+    console.log("slider updated "+this.value);
+    movingTriangleModelTranslateX = this.value;
+    var output = document.getElementById("xPositionLabel");
+    output.innerHTML = xSlider.value;
+    drawScene();
+  }
+
+  var ySlider = document.getElementById("movingTriangleYPositionSlider");
+  ySlider.oninput = function() {
+    console.log("slider updated "+this.value);
+    movingTriangleModelTranslateY = this.value;
+    var output = document.getElementById("yPositionLabel");
+    output.innerHTML = ySlider.value;
+    drawScene();
+  }
+
+  var zSlider = document.getElementById("movingTriangleZPositionSlider");
+  zSlider.oninput = function() {
+    console.log("slider updated "+this.value);
+    movingTriangleModelTranslateZ = this.value;
+    var output = document.getElementById("zPositionLabel");
+    output.innerHTML = zSlider.value;
+    drawScene();
+  }
+  </script>
+
+</body>
+</html>

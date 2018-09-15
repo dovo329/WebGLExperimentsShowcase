@@ -1,0 +1,226 @@
+<!-- Demo of WebGL Normalized Device Coordinates (NDC).  Show that WebGL NDC is a left handed coordinate system -->
+<html>
+<head>
+  <style>
+  canvas {
+    width: 400px;
+    height: 400px;
+    display: block;
+  }
+  input.slider {
+    width: 340px;
+    height: 20px;
+  }
+  label.slider {
+    vertical-align:top;
+    display:inline-block;
+    height: 20px;
+  }
+  </style>
+  <meta http-equiv="Content-Type" content="text/html; charset=windows-1252">
+  <title>WebGL NDC Point Demo
+  </title>
+
+  <script id="shader-fs" type="x-shader/x-fragment">
+  precision mediump float;
+  varying float vZCoordinate;
+
+  void main(void) {
+    float red = (vZCoordinate + 1.0)/2.0;
+    float blue = 1.0 - red;
+    red = clamp(red, 0.0, 1.0);
+    blue = clamp(blue, 0.0, 1.0);
+    gl_FragColor = vec4(red, 0.0, blue, 1.0);
+  }
+</script>
+
+<script id="shader-vs" type="x-shader/x-vertex">
+attribute vec3 aVertexPosition;
+
+varying float vZCoordinate;
+
+void main(void) {
+  gl_Position = vec4(aVertexPosition, 1.0);
+  vZCoordinate = gl_Position.z;
+  gl_PointSize = 20.0;
+}
+</script>
+
+<script type="text/javascript">
+var gl;
+function initGL(canvas) {
+  try {
+    gl = canvas.getContext("webgl");
+    gl.viewportWidth = canvas.width;
+    gl.viewportHeight = canvas.height;
+  } catch (e) {
+    alert("Init WebGL Error: "+e);
+  }
+}
+
+function getShader(gl, id) {
+  var shaderScript = document.getElementById(id);
+  if (!shaderScript) {
+    return null;
+  }
+
+  var str = "";
+  var k = shaderScript.firstChild;
+  while (k) {
+    if (k.nodeType == 3) {
+      str += k.textContent;
+    }
+    k = k.nextSibling;
+  }
+
+  var shader;
+  if (shaderScript.type == "x-shader/x-fragment") {
+    shader = gl.createShader(gl.FRAGMENT_SHADER);
+  } else if (shaderScript.type == "x-shader/x-vertex") {
+    shader = gl.createShader(gl.VERTEX_SHADER);
+  } else {
+    return null;
+  }
+
+  gl.shaderSource(shader, str);
+  gl.compileShader(shader);
+
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    alert(gl.getShaderInfoLog(shader));
+    return null;
+  }
+
+  return shader;
+}
+
+var shaderProgram;
+function initShaders() {
+  var fragmentShader = getShader(gl, "shader-fs");
+  var vertexShader = getShader(gl, "shader-vs");
+
+  shaderProgram = gl.createProgram();
+  gl.attachShader(shaderProgram, vertexShader);
+  gl.attachShader(shaderProgram, fragmentShader);
+  gl.linkProgram(shaderProgram);
+
+  if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+    alert("Init Shaders Error");
+  }
+
+  gl.useProgram(shaderProgram);
+
+  shaderProgram.aVertexPosition = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+  gl.enableVertexAttribArray(shaderProgram.aVertexPosition);
+}
+
+var movingPointBuffer;
+var movingPoint3DCoordinates = [0.0, 0.0, 0.0];
+function initMovingPointBuffer() {
+  movingPointBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, movingPointBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(movingPoint3DCoordinates), gl.DYNAMIC_DRAW);
+  movingPointBuffer.itemSize = 3;
+  movingPointBuffer.numItems = movingPoint3DCoordinates.length / movingPointBuffer.itemSize;
+}
+
+function drawScene() {
+  gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+  gl.enable(gl.BLEND);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, movingPointBuffer);
+  gl.vertexAttribPointer(shaderProgram.aVertexPosition, movingPointBuffer.itemSize, gl.FLOAT, false, 0, 0);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(movingPoint3DCoordinates), gl.DYNAMIC_DRAW);
+  gl.drawArrays(gl.POINTS, 0, movingPointBuffer.numItems);
+}
+
+function webGLStart() {
+  var canvas = document.getElementById("canvas");
+  initGL(canvas);
+  initShaders();
+  initMovingPointBuffer();
+
+  gl.clearColor(0.0, 0.0, 0.0, 1.0);
+  gl.enable(gl.DEPTH_TEST);
+
+  drawScene();
+
+  // show initial values for sliders
+  xSlider.oninput();
+  ySlider.oninput();
+  zSlider.oninput();
+}
+
+function printMatrix(matrix, desc) {
+
+  var matrixStr = "[\n";
+  for(var r=0; r<4; r++) {
+    matrixStr += "[";
+    for(var c=0; c<4; c++) {
+      matrixStr += ""+matrix[r+(c*4)].toFixed(3);
+      if (c<4-1) {
+        matrixStr += ", "
+      }
+    }
+    matrixStr += "]";
+    if (r<4-1) {
+      matrixStr += ",";
+    } else {
+      matrixStr += "\n]";
+    }
+    matrixStr += "\n"
+  }
+  console.log(desc+": "+matrixStr);
+}
+</script>
+</head>
+
+<body onload="webGLStart();">
+
+  <canvas id="canvas" style="border: none;" width="500" height="500">
+  </canvas>
+
+  <div class="slidecontainer">
+    <input type="range" min="-1.1" max="1.1" value="0.1" step="0.1" class="slider" id="xPositionSlider">
+    <label class="slider">x: <span id="xPositionLabel"></span></label>
+    <br>
+    <input type="range" min="-1.1" max="1.1" value="0.1" step="0.1" class="slider" id="yPositionSlider">
+    <label class="slider">y: <span id="yPositionLabel"></span></label>
+    <br>
+    <input type="range" min="-1.1" max="1.1" value="0.1" step="0.1" class="slider" id="zPositionSlider">
+    <label class="slider">z: <span id="zPositionLabel"></span></label>
+  </div>
+
+  <script>
+  var xSlider = document.getElementById("xPositionSlider");
+  xSlider.oninput = function() {
+    console.log("slider updated "+this.value);
+    movingPoint3DCoordinates[0] = this.value;
+    var output = document.getElementById("xPositionLabel");
+    output.innerHTML = xSlider.value;
+    drawScene();
+  }
+
+  var ySlider = document.getElementById("yPositionSlider");
+  ySlider.oninput = function() {
+    console.log("slider updated "+this.value);
+    movingPoint3DCoordinates[1] = this.value;
+    var output = document.getElementById("yPositionLabel");
+    output.innerHTML = ySlider.value;
+    drawScene();
+  }
+
+  var zSlider = document.getElementById("zPositionSlider");
+  zSlider.oninput = function() {
+    console.log("slider updated "+this.value);
+    movingPoint3DCoordinates[2] = this.value;
+    var output = document.getElementById("zPositionLabel");
+    output.innerHTML = zSlider.value;
+    drawScene();
+  }
+  </script>
+
+</body>
+</html>

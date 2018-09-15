@@ -1,0 +1,437 @@
+<!-- Try to learn stuff -->
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=windows-1252">
+  <title>WebGL
+  </title>
+
+  <script id="shader-fs" type="x-shader/x-fragment">
+  precision mediump float;
+  uniform vec4 colorIn;
+
+  varying float zColor;
+
+  void main(void) {
+    //gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+    //gl_FragColor = colorIn;
+
+    vec2 coord = gl_PointCoord - vec2(0.5);  //from [0,1] to [-0.5,0.5]
+    if(length(coord) > 0.5)                  //outside of circle radius?
+    {
+      discard;
+    }
+
+    gl_FragColor = vec4(0.0, max(0.0,min(1.0,1.0-zColor)), max(0.0,min(1.0,zColor)), 1.0);
+
+    //gl_FragColor = vec4(gl_PointCoord.x, gl_PointCoord.y, 0.0, 1.0);
+  }
+  </script>
+
+  <script id="shader-vs" type="x-shader/x-vertex">
+  attribute vec3 aVertexPosition;
+
+  uniform mat4 modelMatrix;
+  uniform mat4 cameraMatrix;
+  uniform mat4 projectionMatrix;
+  uniform float pointSizeMax;
+  uniform float pointSizeMin;
+  uniform float pointZMax;
+  uniform float pointZMin;
+
+  varying float zColor;
+
+  void main(void) {
+    gl_Position = projectionMatrix*cameraMatrix*modelMatrix*vec4(aVertexPosition, 1.0);
+    gl_PointSize = ((pointSizeMin - pointSizeMax)/(pointZMax - pointZMin)*(gl_Position.z - pointZMin)) + pointSizeMax;
+    //gl_PointSize = gl_Position.z;
+    //gl_PointSize = ((pointSizeMax - pointSizeMin)/(pointZMax - pointZMin)*(gl_Position.z - pointZMin)) + pointSizeMin;
+    //gl_PointSize = 3.0;
+    zColor = ((0.0 - 1.0)/(pointZMax - pointZMin)*(gl_Position.z - pointZMin)) + 1.0;
+  }
+  </script>
+
+<script type="text/javascript">
+
+var gl;
+function initGL(canvas) {
+  try {
+    gl = canvas.getContext("experimental-webgl");
+    gl.viewportWidth = canvas.width;
+    gl.viewportHeight = canvas.height;
+  } catch (e) {
+  }
+  if (!gl) {
+    alert("Could not initialise WebGL, sorry :-(");
+  }
+}
+
+function getShader(gl, id) {
+  var shaderScript = document.getElementById(id);
+  if (!shaderScript) {
+    return null;
+  }
+
+  var str = "";
+  var k = shaderScript.firstChild;
+  while (k) {
+    if (k.nodeType == 3) {
+      str += k.textContent;
+    }
+    k = k.nextSibling;
+  }
+
+  var shader;
+  if (shaderScript.type == "x-shader/x-fragment") {
+    shader = gl.createShader(gl.FRAGMENT_SHADER);
+  } else if (shaderScript.type == "x-shader/x-vertex") {
+    shader = gl.createShader(gl.VERTEX_SHADER);
+  } else {
+    return null;
+  }
+
+  gl.shaderSource(shader, str);
+  gl.compileShader(shader);
+
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    alert(gl.getShaderInfoLog(shader));
+    return null;
+  }
+
+  return shader;
+}
+
+var shaderProgram;
+
+function initShaders() {
+  var fragmentShader = getShader(gl, "shader-fs");
+  var vertexShader = getShader(gl, "shader-vs");
+
+  shaderProgram = gl.createProgram();
+  gl.attachShader(shaderProgram, vertexShader);
+  gl.attachShader(shaderProgram, fragmentShader);
+  gl.linkProgram(shaderProgram);
+
+  if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+    alert("Could not initialise shaders");
+  }
+
+  gl.useProgram(shaderProgram);
+
+  shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+  gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+
+  shaderProgram.colorIn = gl.getUniformLocation(shaderProgram, "colorIn");
+
+  shaderProgram.projectionMatrixUniform = gl.getUniformLocation(shaderProgram, "projectionMatrix");
+  shaderProgram.cameraMatrixUniform = gl.getUniformLocation(shaderProgram, "cameraMatrix");
+  shaderProgram.modelMatrixUniform = gl.getUniformLocation(shaderProgram, "modelMatrix");
+  shaderProgram.pointSizeMaxUniform = gl.getUniformLocation(shaderProgram, "pointSizeMax");
+  shaderProgram.pointSizeMinUniform = gl.getUniformLocation(shaderProgram, "pointSizeMin");
+  shaderProgram.pointZMaxUniform = gl.getUniformLocation(shaderProgram, "pointZMax");
+  shaderProgram.pointZMinUniform = gl.getUniformLocation(shaderProgram, "pointZMin");
+}
+
+var modelBank = 0.0;
+var modelPitch = 0.0;
+var modelHeading = 0.0;
+var modelTranslateX = 0.0;
+var modelTranslateY = 0.0;
+var modelTranslateZ = 0.0;
+
+var modelMatrix = new Float32Array(16);
+function buildModelMatrix() {
+  // Euler angle rotation matrix
+    // (ch*cb + sh*sp*sb)    (sb*cp)    (-sh*cb + ch*sp*sb)
+    // (-ch*sb + sh*sp*cb)   (cb*cp)    (sb*sh + ch*sp*cb)
+    // (sh cp)                (-sp)         (ch*cp)
+
+    modelMatrix[(0*4)] = (Math.cos(modelHeading)*Math.cos(modelBank)) + (Math.sin(modelHeading)*Math.sin(modelPitch)*Math.sin(modelBank));
+    modelMatrix[(1*4)] = Math.sin(modelBank)*Math.cos(modelPitch);
+    modelMatrix[(2*4)] = (-Math.sin(modelHeading)*Math.cos(modelBank)) + (Math.cos(modelHeading)*Math.sin(modelPitch)*Math.sin(modelBank));
+    modelMatrix[(3*4)] = modelTranslateX;
+
+    modelMatrix[(0*4)+1] = (-Math.cos(modelHeading)*Math.sin(modelBank)) + (Math.sin(modelHeading)*Math.sin(modelPitch)*Math.cos(modelBank));
+    modelMatrix[(1*4)+1] = (Math.cos(modelBank)*Math.cos(modelPitch));
+    modelMatrix[(2*4)+1] = (Math.sin(modelBank)*Math.sin(modelHeading)) + (Math.cos(modelHeading)*Math.sin(modelPitch)*Math.cos(modelBank));
+    modelMatrix[(3*4)+1] = modelTranslateY;
+
+    modelMatrix[(0*4)+2] = Math.sin(modelHeading)*Math.cos(modelPitch);
+    modelMatrix[(1*4)+2] = (-Math.sin(modelPitch));
+    modelMatrix[(2*4)+2] = (Math.cos(modelHeading)*Math.cos(modelPitch));
+    modelMatrix[(3*4)+2] = modelTranslateZ;
+
+    modelMatrix[(0*4)+3] = 0.0;
+    modelMatrix[(1*4)+3] = 0.0;
+    modelMatrix[(2*4)+3] = 0.0;
+    modelMatrix[(3*4)+3] = 1.0;
+}
+
+var cameraMatrix = new Float32Array(16);
+function buildCameraMatrix() {
+
+  // Euler angle rotation matrix
+    // (ch*cb + sh*sp*sb)    (sb*cp)    (-sh*cb + ch*sp*sb)
+    // (-ch*sb + sh*sp*cb)   (cb*cp)    (sb*sh + ch*sp*cb)
+    // (sh cp)                (-sp)         (ch*cp)
+
+    cameraMatrix[(0*4)] = (Math.cos(heading)*Math.cos(bank)) + (Math.sin(heading)*Math.sin(pitch)*Math.sin(bank));
+    cameraMatrix[(1*4)] = Math.sin(bank)*Math.cos(pitch);
+    cameraMatrix[(2*4)] = (-Math.sin(heading)*Math.cos(bank)) + (Math.cos(heading)*Math.sin(pitch)*Math.sin(bank));
+    cameraMatrix[(3*4)] = cameraTranslateX;
+
+    cameraMatrix[(0*4)+1] = (-Math.cos(heading)*Math.sin(bank)) + (Math.sin(heading)*Math.sin(pitch)*Math.cos(bank));
+    cameraMatrix[(1*4)+1] = (Math.cos(bank)*Math.cos(pitch));
+    cameraMatrix[(2*4)+1] = (Math.sin(bank)*Math.sin(heading)) + (Math.cos(heading)*Math.sin(pitch)*Math.cos(bank));
+    cameraMatrix[(3*4)+1] = cameraTranslateY;
+
+    cameraMatrix[(0*4)+2] = Math.sin(heading)*Math.cos(pitch);
+    cameraMatrix[(1*4)+2] = (-Math.sin(pitch));
+    cameraMatrix[(2*4)+2] = (Math.cos(heading)*Math.cos(pitch));
+    cameraMatrix[(3*4)+2] = cameraTranslateZ;
+
+    cameraMatrix[(0*4)+3] = 0.0;
+    cameraMatrix[(1*4)+3] = 0.0;
+    cameraMatrix[(2*4)+3] = 0.0;
+    cameraMatrix[(3*4)+3] = 1.0;
+}
+
+var projectionMatrix = new Float32Array(16);
+
+function buildProjectionMatrix(r, l, t, b, f, n) {
+
+// this one works with column vectors
+
+  projectionMatrix[(0*4)] = 2.0*n/(r-l);
+  projectionMatrix[(1*4)] = 0.0;
+  projectionMatrix[(2*4)] = 0.0;
+  projectionMatrix[(3*4)] = -(r+l)/(r-l);
+
+  projectionMatrix[(0*4)+1] = 0.0;
+  projectionMatrix[(1*4)+1] = 2.0*n/(t-b);
+  projectionMatrix[(2*4)+1] = 0.0;
+  projectionMatrix[(3*4)+1] = -(t+b)/(t-b);
+
+  projectionMatrix[(0*4)+2] = 0.0;
+  projectionMatrix[(1*4)+2] = 0.0;
+  projectionMatrix[(2*4)+2] = (f+n)/(f-n);
+  projectionMatrix[(3*4)+2] = -2.0*f*n/(f-n);
+
+  projectionMatrix[(0*4)+3] = 0.0;
+  projectionMatrix[(1*4)+3] = 0.0;
+  projectionMatrix[(2*4)+3] = 1.0;
+  projectionMatrix[(3*4)+3] = 0.0;
+}
+
+var modelVertexPositionBuffer;
+
+var sphereRadius = 0.5;
+function buildModelVertexes() {
+  modelVertexPositionBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexPositionBuffer);
+  var vertexArray = new Array();
+
+  var radius = sphereRadius;
+  var numItems = 0;
+  for (var pitchInDegrees = 90.0; pitchInDegrees >= -90.0; pitchInDegrees -= 10.0) {
+    for (var headingInDegrees = 0.0; headingInDegrees < 360.0; headingInDegrees += 5.0) {
+      var pitch = pitchInDegrees*Math.PI/180.0;
+      var heading = headingInDegrees*Math.PI/180.0;
+
+      var x = radius * Math.cos(pitch) * Math.sin(heading);
+      var y = radius * Math.sin(pitch);
+      var z = radius * Math.cos(pitch) * Math.cos(heading);
+
+      vertexArray.push(x);
+      vertexArray.push(y);
+      vertexArray.push(z);
+      numItems += 1;
+    }
+  }
+
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexArray), gl.STATIC_DRAW);
+
+  modelVertexPositionBuffer.itemSize = 3;
+  modelVertexPositionBuffer.numItems = numItems;
+}
+
+
+function drawScene() {
+  gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+
+  // heading += 0.3*Math.PI/180.0;
+  // pitch += 0.1*Math.PI/180.0;
+  // bank += 0.05*Math.PI/180.0;
+  buildCameraMatrix();
+
+  modelHeading += 0.3*Math.PI/180.0;
+  modelPitch += 0.1*Math.PI/180.0;
+  modelBank += 0.05*Math.PI/180.0;
+  buildModelMatrix();
+
+  //printMatrix(cameraMatrix, "Camera Matrix");
+  gl.uniformMatrix4fv(shaderProgram.projectionMatrixUniform, false, projectionMatrix);
+  gl.uniformMatrix4fv(shaderProgram.cameraMatrixUniform, false, cameraMatrix);
+
+  //mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, projectionMatrix);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexPositionBuffer);
+  gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, modelVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+  gl.uniform4f(shaderProgram.colorIn, 1.0, 0.0, 0.0, 1.0);
+  gl.uniformMatrix4fv(shaderProgram.modelMatrixUniform, false, modelMatrix);
+  gl.uniform1f(shaderProgram.pointSizeMaxUniform, 10.0);
+  gl.uniform1f(shaderProgram.pointSizeMinUniform, 1.0);
+  gl.uniform1f(shaderProgram.pointZMaxUniform, cameraTranslateZ+sphereRadius);
+  gl.uniform1f(shaderProgram.pointZMinUniform, cameraTranslateZ-sphereRadius);
+
+  gl.drawArrays(gl.POINTS, 0, modelVertexPositionBuffer.numItems);
+
+  //console.log("depth_range: "+gl.getParameter(gl.DEPTH_RANGE));
+  requestAnimationFrame(drawScene);
+}
+
+var currentlyPressedKeys = {};
+var incAmt = 0.1;
+
+var bank = 0.0;
+var pitch = 0.0;
+var heading = 0.0;
+var cameraTranslateX = 0.0;
+var cameraTranslateY = 0.0;
+var cameraTranslateZ = 1.5;
+var rotateDeltaDegrees = 10.0;
+
+function handleKeyDown(event) {
+  currentlyPressedKeys[event.keyCode] = true;
+
+  // Heading Left
+  if (String.fromCharCode(event.keyCode) == "Q") {
+    heading -= rotateDeltaDegrees*(Math.PI/180.0);
+  }
+  // Heading Right
+  if (String.fromCharCode(event.keyCode) == "E") {
+    heading += rotateDeltaDegrees*(Math.PI/180.0);
+  }
+  // Pitch Up
+  if (String.fromCharCode(event.keyCode) == "2") {
+    pitch += rotateDeltaDegrees*(Math.PI/180.0);
+  }
+  // Pitch Down
+  if (String.fromCharCode(event.keyCode) == "W") {
+    pitch -= rotateDeltaDegrees*(Math.PI/180.0);
+  }
+  // Bank Left
+  if (String.fromCharCode(event.keyCode) == "1") {
+    bank -= rotateDeltaDegrees*(Math.PI/180.0);
+  }
+  // Bank Right
+  if (String.fromCharCode(event.keyCode) == "3") {
+    bank += rotateDeltaDegrees*(Math.PI/180.0);
+  }
+
+  // Left
+  if (String.fromCharCode(event.keyCode) == "Z") {
+    cameraTranslateX += incAmt;
+  }
+  // Right
+  if (String.fromCharCode(event.keyCode) == "C") {
+    cameraTranslateX -= incAmt;
+  }
+
+  // Up
+  if (String.fromCharCode(event.keyCode) == "S") {
+    cameraTranslateY -= incAmt;
+  }
+  // Down
+  if (String.fromCharCode(event.keyCode) == "X") {
+    cameraTranslateY += incAmt;
+  }
+
+  // Forward
+  if (String.fromCharCode(event.keyCode) == "A") {
+    cameraTranslateZ -= incAmt;
+  }
+  // Back
+  if (String.fromCharCode(event.keyCode) == "D") {
+    cameraTranslateZ += incAmt;
+  }
+
+  buildCameraMatrix();
+
+  printMatrix(cameraMatrix, "Camera Matrix");
+}
+
+function printMatrix(matrix, desc) {
+
+  var matrixStr = "[\n";
+  for(var r=0; r<4; r++) {
+    matrixStr += "[";
+    for(var c=0; c<4; c++) {
+      matrixStr += ""+matrix[r+(c*4)].toFixed(3);
+      if (c<4-1) {
+        matrixStr += ", "
+      }
+    }
+    matrixStr += "]";
+    if (r<4-1) {
+      matrixStr += ",";
+    } else {
+      matrixStr += "\n]";
+    }
+    matrixStr += "\n"
+  }
+  console.log(desc+": "+matrixStr);
+}
+
+function handleKeyUp(event) {
+  currentlyPressedKeys[event.keyCode] = false;
+}
+
+function webGLStart() {
+  var canvas = document.getElementById("lesson01-canvas");
+  initGL(canvas);
+  initShaders();
+
+  var fovy = 45*Math.PI/180.0;
+  var aspectRatio = 1.0;
+  var f = 10.0;
+  var n = 0.1;
+
+  var t = Math.tan(fovy/2.0)*n;
+  var b = -t;
+  var r = aspectRatio*t;
+  var l = -r;
+  buildProjectionMatrix(r, l, t, b, f, n);
+
+  buildCameraMatrix();
+
+  buildModelMatrix();
+
+  buildModelVertexes();
+
+  gl.clearColor(0.0, 0.0, 0.0, 1.0);
+  gl.enable(gl.DEPTH_TEST);
+
+  gl.uniformMatrix4fv(shaderProgram.projectionMatrixUniform, false, projectionMatrix);
+  gl.uniformMatrix4fv(shaderProgram.cameraMatrixUniform, false, cameraMatrix);
+  gl.uniformMatrix4fv(shaderProgram.modelMatrixUniform, false, modelMatrix);
+  requestAnimationFrame(drawScene);
+
+  document.onkeydown = handleKeyDown;
+  document.onkeyup = handleKeyUp;
+}
+
+</script>
+
+
+</head>
+
+
+<body onload="webGLStart();">
+
+  <canvas id="lesson01-canvas" style="border: none;" width="500" height="500">
+  </canvas>
+
+</body>
+</html>

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+  :root {
+    font-size: 12.0pt;
+  }
+  body {
+    margin: 0;
+    overflow: hidden;
+  }
+  ul {
+    list-style-type: none;
+    margin: 0;
+    padding: 0;
+    width: 160px;
+    background-color: #f1f1f1;
+    position: fixed;
+    height: 100%;
+    overflow: auto;
+  }
+  li a {
+    display: block;
+    color: #000;
+    padding: 8px 16px;
+    text-decoration: none;
+    text-align: left;
+  }
+  /* Change the link color on hover */
+  li a.active {
+      background-color: #4CAF50;
+      color: white;
+  }
+
+  li a:hover:not(.active) {
+      background-color: #555;
+      color: white;
+  }
+  #main_iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    overflow:hidden;
+  }
+  div {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 160px;
+    //background-color: #ff0;
+  }
+</style>
+
+<title>WebGL Examples
+</title>
+
+</head>
+<body>
+
+  <ul>
+    <li><a onclick="linkClick(this)" class="active" href="ndc_intro_point.html" target="main_iframe">NDC Intro Point</a></li>
+    <li><a onclick="linkClick(this)" href="ndc_intro_triangles.html" target="main_iframe">NDC Intro Triangles</a></li>
+    <li><a onclick="linkClick(this)" href="sphere_balls.html" target="main_iframe">Sphere Balls</a></li>
+    <li><a onclick="linkClick(this)" href="lorenz_attractor.html" target="main_iframe">Lorenz Attractor</a></li>
+    <li><a onclick="linkClick(this)" href="colored_snow.html" target="main_iframe">Colored Snow</a></li>
+  </ul>
+
+  <script>
+  function linkClick(id) {
+      var linkArray = document.querySelectorAll("a");
+      for (var i=0; i<linkArray.length; i++) {
+        linkArray[i].className = "inactive";
+      }
+      id.className = "active";
+  }
+  </script>
+
+  <div>
+    <iframe id="main_iframe" src="ndc_intro_point.html" name="main_iframe" scroll="no"></iframe>
+  </div>
+
+</body>
+</html>
